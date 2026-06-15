@@ -25,6 +25,39 @@ and product catalog data consumed by other services via typed internal contracts
 
 ---
 
+## Architecture
+
+The service follows **hexagonal architecture (ports & adapters)** with a separate, framework-free domain model — see [ADR 0014](https://github.com/tapok332/foodwise-platform) for the platform-wide decision.
+
+```
+kh.karazin.foodwise.store/
+├── domain/              # pure Java: Store, Category, MenuItem, MenuSection, Combo, Promo,
+│                        #   StoreReview, HeroImage, CategoryIcon aggregates + SurpriseBoxView
+│                        #   read-model, StoreType/StoreGroup enums, VO ids — isCurrentlyOpen,
+│                        #   Combo ownership invariant, discountPercentage, locale resolution
+├── application/
+│   ├── port/in/         # one use-case interface per concern (Store/Category/MenuItem/Combo/
+│   │                    #   MenuSection/Promo/Review/Content/Media/SurpriseBoxQuery) + commands
+│   ├── port/out/        # repositories, SurpriseBoxCatalogGateway, StoreEventPublisher, FileStoragePort
+│   └── usecase/         # @Service implementations — @Transactional + @Cacheable boundaries
+├── adapter/
+│   ├── in/rest/         # 9 controllers (incl. internal lane), wire DTOs, explicit REST mappers,
+│   │                    #   RequestLocaleResolver
+│   └── out/
+│       ├── persistence/ # JPA entities, Spring Data repos (native PostGIS + Criteria spec live
+│       │                #   here), persistence adapters, CategorySeedRunner
+│       ├── client/      # SurpriseBoxCatalogClient (unified internal item lookup)
+│       ├── messaging/   # StoreEventPublisherAdapter (transactional outbox)
+│       └── storage/     # GcsFileStorageAdapter
+└── config/              # Spring wiring: security, cache, Kafka, RestClient, geometry, GCS, properties
+```
+
+Layer rules are enforced by [`HexagonalArchitectureTest`](src/test/java/kh/karazin/foodwise/store/architecture/HexagonalArchitectureTest.java) (ArchUnit, runs in `gradlew test` and CI): `domain` depends on no framework (Spring / JPA / Jackson) and no outer layer — the only sanctioned exception is the shared `Money` value object; `application` talks to the outside world only through ports; `@RestController` / `@KafkaListener` / `@Entity` types exist only in their adapter packages.
+
+The PostGIS specifics stay behind the persistence boundary: the geography `Point` round-trip (lat/lng ↔ `ST_MakePoint`) and the dynamic `ST_Distance` Criteria filter live in `StorePersistenceAdapter`, so the domain `Store` carries only plain latitude/longitude doubles. The `/home` surprise-box feed is a deliberately anemic `SurpriseBoxView` read-model (mapped inside the read transaction, no open-session-in-view dependency); store discovery, opening-hours, combo composition and category localization carry their behavior in the domain aggregates.
+
+---
+
 ## Engineering Highlights
 
 ### PostGIS Geo Search

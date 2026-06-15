@@ -70,6 +70,9 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:junit-jupiter:1.20.4'
     testImplementation 'org.testcontainers:postgresql:1.20.4'
+
+    // ArchUnit — hexagonal layering rules (ADR 0014)
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
 }
 
 tasks.named('test') {
