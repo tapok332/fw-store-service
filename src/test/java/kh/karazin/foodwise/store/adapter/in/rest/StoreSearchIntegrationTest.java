@@ -304,6 +304,55 @@ class StoreSearchIntegrationTest {
                 .isFalse();
     }
 
+    // --- HTTP QUERY method: same search, filters carried in a JSON body ---
+
+    @Test
+    void queryMethod_filtersByMinRating_sameContractAsGet() throws Exception {
+        JsonNode content = query("""
+                { "minRating": 4.5 }
+                """).path("data").path("content");
+
+        assertThat(content.size()).isGreaterThanOrEqualTo(2);
+        for (JsonNode node : content) {
+            assertThat(node.path("rating").decimalValue()).isGreaterThanOrEqualTo(new BigDecimal("4.5"));
+        }
+    }
+
+    @Test
+    void queryMethod_geoFilterInBody_excludesFarStore() throws Exception {
+        JsonNode content = query("""
+                { "within": { "lat": %s, "lng": %s, "radiusKm": 1 } }
+                """.formatted(USER_LAT, USER_LNG)).path("data").path("content");
+
+        assertThat(content).hasSize(5);
+        for (JsonNode node : content) {
+            assertThat(node.path("name").asText()).isNotEqualTo("Far Pizza");
+        }
+    }
+
+    @Test
+    void queryMethod_invalidSortInBody_returns400_withEnvelope() throws Exception {
+        HttpResponse<String> response = sendQuery("""
+                { "sort": "password" }
+                """);
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        JsonNode body = objectMapper.readTree(response.body());
+        assertThat(body.get("success").asBoolean()).isFalse();
+        assertThat(body.get("error").get("code").asText()).isEqualTo("BAD_REQUEST");
+    }
+
+    @Test
+    void queryMethod_malformedBody_returns400_withSameEnvelope() throws Exception {
+        HttpResponse<String> response = sendQuery("{ not json");
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        JsonNode body = objectMapper.readTree(response.body());
+        // Same ApiResponse envelope as an invalid sort — not the ErrorDetails shape.
+        assertThat(body.get("success").asBoolean()).isFalse();
+        assertThat(body.get("error").get("code").asText()).isEqualTo("BAD_REQUEST");
+    }
+
     private JsonNode call(String url) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + url))
@@ -316,6 +365,25 @@ class StoreSearchIntegrationTest {
                 .as("status for %s, body=%s", url, response.body())
                 .isBetween(200, 299);
         return objectMapper.readTree(response.body());
+    }
+
+    private JsonNode query(String jsonBody) throws Exception {
+        HttpResponse<String> response = sendQuery(jsonBody);
+        assertThat(response.statusCode())
+                .as("QUERY status, body=%s", response.body())
+                .isBetween(200, 299);
+        return objectMapper.readTree(response.body());
+    }
+
+    private HttpResponse<String> sendQuery(String jsonBody) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/stores"))
+                .header("X-Internal-Token", "test-internal-secret")
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(10))
+                .method("QUERY", HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private void save(String name, StoreType type, CategoryEntity category, double rating, int priceLevel,

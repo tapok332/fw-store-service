@@ -12,6 +12,10 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.firewall.HttpFirewall;
+import org.springframework.security.web.firewall.StrictHttpFirewall;
+
+import java.util.List;
 
 /**
  * Security configuration for the store-service.
@@ -42,6 +46,20 @@ public class SecurityConfig {
     @Bean
     public XUserHeadersAuthFilter xUserHeadersAuthFilter() {
         return new XUserHeadersAuthFilter();
+    }
+
+    /**
+     * {@link StrictHttpFirewall} rejects any method outside its default allow-list
+     * ({@code GET/HEAD/POST/PUT/PATCH/DELETE/OPTIONS/TRACE}) with 400 before the
+     * request ever reaches the {@code DispatcherServlet}. The HTTP {@code QUERY}
+     * method (see {@code StoreQueryRouterConfig}) must be added explicitly.
+     */
+    @Bean
+    public HttpFirewall httpFirewall() {
+        StrictHttpFirewall firewall = new StrictHttpFirewall();
+        firewall.setAllowedHttpMethods(List.of(
+                "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "QUERY"));
+        return firewall;
     }
 
     @Bean
